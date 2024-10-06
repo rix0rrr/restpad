@@ -1,1 +1,27 @@
-{}
+{
+  "defaultPressColor": "#FF00FF",
+  "buttons": [
+    {
+      "x": 2,
+      "y": 1,
+      "color": "#CB5BDD",
+      "onPress": { "navigate": { "href": "example2.json" } },
+      "pressColor": "#FFFF00"
+    },
+    {
+      "x": 4,
+      "y": 1,
+      "width": 3,
+      "color": "#CB5BDD",
+      "onPress": { "open": { "href": "https://www.google.com/" } }
+    }
+  ],
+  "text": [
+    {
+      "x": 0,
+      "y": 2,
+      "color": "#73D987",
+      "text": "Hello, world"
+    }
+  ]
+}

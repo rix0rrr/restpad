@@ -4,10 +4,15 @@ use serde::{Deserialize, Serialize};
 
 /// The payload of a page load
 #[derive(Clone, Serialize, Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
 pub struct Payload {
     /// A list of button bindings
     #[serde(default)]
-    pub buttons: Vec<Button>,
+    pub buttons: Vec<ButtonSpec>,
+
+    /// A list of texts
+    #[serde(default)]
+    pub text: Vec<TextSpec>,
 
     /// A date time for when the page needs to be automatically refreshed.
     ///
@@ -19,7 +24,8 @@ pub struct Payload {
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
-pub struct Button {
+#[serde(rename_all = "camelCase")]
+pub struct ButtonSpec {
     /// X coordinate of this button
     pub x: u32,
 
@@ -33,6 +39,9 @@ pub struct Button {
     #[serde(default)]
     pub style: Style,
 
+    /// The width of the button
+    pub width: Option<u8>,
+
     /// The color this button should have if it is being pressed
     pub press_color: Option<HexColor>,
 
@@ -40,7 +49,27 @@ pub struct Button {
     pub on_press: Option<Action>,
 }
 
+#[derive(Clone, Serialize, Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct TextSpec {
+    /// X coordinate of this button
+    pub x: u32,
+
+    /// Y coordinate of this button
+    pub y: u32,
+
+    /// The text to print
+    pub text: String,
+
+    /// The color of this button
+    pub color: HexColor,
+
+    /// Maximum width of the text
+    pub width: Option<u32>,
+}
+
 #[derive(Clone, Serialize, Deserialize, Debug, Default)]
+#[serde(rename_all = "camelCase")]
 pub enum Style {
     /// The button just lights up
     #[default]
@@ -56,9 +85,12 @@ pub enum Style {
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
 pub enum Action {
     /// Navigate to the given URL
-    Navigate(String),
+    #[serde(rename = "navigate")]
+    Navigate { href: String },
     /// Open a browser at the given URL
-    Browser(String),
+    #[serde(rename = "open")]
+    Browser { href: String },
 }
