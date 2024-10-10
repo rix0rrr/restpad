@@ -60,15 +60,15 @@ impl<'a> DrawTarget for PadTarget<'a> {
         I: IntoIterator<Item = Pixel<Self::Color>>,
     {
         for Pixel(coord, color) in pixels.into_iter() {
-            // discard any potential out of bounds errors. that's just how it's done in
-            // embedded-graphics world
-            self.buttons.insert(
-                Button::grid(
-                    (coord.x + self.origin.0) as u8,
-                    (coord.y + self.origin.1) as u8,
-                ),
-                OurRgbColor::new(color.r(), color.g(), color.b()).into(),
-            );
+            if coord.x < self.size.0 as i32 && coord.y < self.size.1 as i32 {
+                self.buttons.insert(
+                    Button::grid(
+                        (coord.x + self.origin.0) as u8,
+                        (coord.y + self.origin.1) as u8,
+                    ),
+                    OurRgbColor::new(color.r(), color.g(), color.b()).into(),
+                );
+            }
         }
         Ok(())
     }

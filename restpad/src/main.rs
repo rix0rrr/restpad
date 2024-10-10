@@ -24,6 +24,9 @@ use tokio::{
     time::{interval, Instant, Interval},
 };
 
+static GRID_WIDTH: u32 = 8;
+static GRID_HEIGHT: u32 = 8;
+
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
 struct Args {
@@ -56,6 +59,7 @@ struct RestPad {
     pressed_buttons: HashSet<Button>,
     counter: i32,
     timer: Option<Interval>,
+    y_scroll: u32,
 }
 
 impl RestPad {
@@ -69,6 +73,7 @@ impl RestPad {
             pressed_buttons: Default::default(),
             counter: 0,
             timer: Default::default(),
+            y_scroll: 0,
         })
     }
 
@@ -119,6 +124,8 @@ impl RestPad {
             }
             InputMessage::Release(button) => {
                 self.pressed_buttons.remove(&button);
+
+                let scrollable = self.scrollable_y_height() > 0;
                 match button {
                     Button::UP => {
                         if self.prefs.brightness < 8 {
@@ -141,6 +148,23 @@ impl RestPad {
                     Button::RIGHT => {
                         self.navigator.forward().await?;
                         self.on_page_load();
+                    }
+                    Button::GridButton { x, y: 0 } if x == GRID_WIDTH as u8 && scrollable => {
+                        // The way we do pressed buttons, a pressed button will never be released
+                        // if we adjust the scroll. So scrolling only works if no other buttons
+                        // are pressed ^^
+                        if self.y_scroll > 0 && self.pressed_buttons.is_empty() {
+                            self.y_scroll -= 1;
+                        }
+                    }
+                    Button::GridButton { x, y }
+                        if x == GRID_WIDTH as u8 && y == GRID_HEIGHT as u8 - 1 && scrollable =>
+                    {
+                        if self.y_scroll < self.scrollable_y_height()
+                            && self.pressed_buttons.is_empty()
+                        {
+                            self.y_scroll += 1;
+                        }
                     }
                     Button::GridButton { x, y } => {
                         // Find the button that was pressed
@@ -167,7 +191,15 @@ impl RestPad {
     }
 
     fn on_page_load(&mut self) {
-        self.timer = Some(interval(Duration::from_millis(100)));
+        self.timer = None;
+
+        // Only start the timer if there are texts to scroll
+        if let Some(payload) = self.navigator.current() {
+            if !payload.text.is_empty() {
+                self.timer = Some(interval(Duration::from_millis(100)));
+            }
+        }
+        self.y_scroll = 0;
     }
 
     fn update_buttons(&mut self) -> anyhow::Result<()> {
@@ -196,10 +228,11 @@ impl RestPad {
             }
             .into(),
         );
+        // LEFT and RIGHT are for the browser history
         buttons.insert(
             Button::LEFT,
             cond! {
-                self.pressed_buttons.contains(&Button::LEFT) => PaletteColor::RED,
+                self.pressed_buttons.contains(&Button::LEFT) => PaletteColor::YELLOW,
                 self.navigator.has_history() => PaletteColor::WHITE,
                 _ => PaletteColor::BLACK
             }
@@ -208,15 +241,64 @@ impl RestPad {
         buttons.insert(
             Button::RIGHT,
             cond! {
-                self.pressed_buttons.contains(&Button::RIGHT) => PaletteColor::RED,
+                self.pressed_buttons.contains(&Button::RIGHT) => PaletteColor::YELLOW,
                 self.navigator.has_future() => PaletteColor::WHITE,
                 _ => PaletteColor::BLACK
             }
             .into(),
         );
 
+        // The right-hand column is for vertical scroll
+        let invis_height = self.scrollable_y_height();
+        if invis_height > 0 {
+            let up_button = Button::GridButton {
+                x: GRID_WIDTH as u8,
+                y: 0,
+            };
+            let down_button = Button::GridButton {
+                x: GRID_WIDTH as u8,
+                y: GRID_HEIGHT as u8 - 1,
+            };
+            buttons.insert(
+                up_button,
+                cond! {
+                    self.pressed_buttons.contains(&up_button) => PaletteColor::YELLOW,
+                    _ => PaletteColor::WHITE
+                }
+                .into(),
+            );
+            buttons.insert(
+                down_button,
+                cond! {
+                    self.pressed_buttons.contains(&down_button) => PaletteColor::YELLOW,
+                    _ => PaletteColor::WHITE
+                }
+                .into(),
+            );
+
+            // Indicate the scroll position
+            let scroll_pos = self.y_scroll * (GRID_HEIGHT - 2 - 1) / invis_height;
+            buttons.insert(
+                Button::GridButton {
+                    x: GRID_WIDTH as u8,
+                    y: 1 + scroll_pos as u8,
+                },
+                PaletteColor::DARK_GRAY.into(),
+            );
+        }
+
         for button in &payload.buttons {
-            let pads = pads_from_button(button);
+            // Reserve the right-hand column for the scroll bar
+            if button.x >= GRID_WIDTH {
+                continue;
+            }
+
+            // This adjusts the button in virtual-space to the pad in real-space
+            let pads = self
+                .pads_from_buttonspec(button)
+                .into_iter()
+                .filter(|p| !matches!(p, Button::GridButton { x, .. } if *x >= GRID_WIDTH as u8))
+                .collect::<Vec<_>>();
 
             let is_pressed = pads.iter().any(|p| self.pressed_buttons.contains(p));
             let press_color = button
@@ -235,8 +317,13 @@ impl RestPad {
 
         for text in &payload.text {
             let color = hex_to_rgb(text.color);
-            let pos = (text.x as i32, text.y as i32);
-            let size = (text.width.unwrap_or(9).min((9 - pos.0) as u32), 6);
+            let pos = (text.x as i32, text.y as i32 - self.y_scroll as i32);
+            let size = (
+                text.width
+                    .unwrap_or(GRID_WIDTH)
+                    .min(GRID_WIDTH - pos.0 as u32),
+                6,
+            );
 
             let invis_width = (text_width(&text.text) as i32 - size.0 as i32).max(0);
             let wait_margin = 10;
@@ -258,24 +345,45 @@ impl RestPad {
         Ok(())
     }
 
+    fn y_max(&self) -> u32 {
+        let Some(payload) = self.navigator.current() else {
+            return 0;
+        };
+
+        let y_max_buttons = payload.buttons.iter().map(|b| b.y).max().unwrap_or(0);
+        let y_max_text = payload.text.iter().map(|t| t.y + 6).max().unwrap_or(0);
+        y_max_buttons.max(y_max_text)
+    }
+
+    fn scrollable_y_height(&self) -> u32 {
+        (self.y_max() as i32 + 1 - GRID_HEIGHT as i32).max(0) as u32
+    }
+
     fn find_button(&self, pad: Button) -> Option<ButtonSpec> {
         let Some(payload) = self.navigator.current() else {
             return None;
         };
         for button in &payload.buttons {
-            let pads = pads_from_button(button);
+            let pads = self.pads_from_buttonspec(button);
             if pads.contains(&pad) {
                 return Some(button.clone());
             }
         }
         None
     }
-}
 
-fn pads_from_button(button: &ButtonSpec) -> Vec<Button> {
-    (0..button.width.unwrap_or(1).max(1))
-        .map(|k| Button::grid(button.x as u8 + k, button.y as u8))
-        .collect::<Vec<_>>()
+    fn pads_from_buttonspec(&self, button: &ButtonSpec) -> Vec<Button> {
+        (0..button.width.unwrap_or(1).max(1))
+            .filter_map(|k| {
+                let adjusted_y = button.y as i32 - self.y_scroll as i32;
+                if 0 <= adjusted_y && adjusted_y < GRID_HEIGHT as i32 {
+                    Some(Button::grid(button.x as u8 + k, adjusted_y as u8))
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>()
+    }
 }
 
 fn print_error<A, E: std::fmt::Display>(e: Result<A, E>) -> Option<A> {
