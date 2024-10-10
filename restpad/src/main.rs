@@ -149,6 +149,10 @@ impl RestPad {
                         self.navigator.forward().await?;
                         self.on_page_load();
                     }
+                    Button::MIXER => {
+                        self.navigator.refresh().await?;
+                        self.on_page_load();
+                    }
                     Button::GridButton { x, y: 0 } if x == GRID_WIDTH as u8 && scrollable => {
                         // The way we do pressed buttons, a pressed button will never be released
                         // if we adjust the scroll. So scrolling only works if no other buttons
@@ -245,6 +249,15 @@ impl RestPad {
                 self.navigator.has_future() => PaletteColor::WHITE,
                 _ => PaletteColor::BLACK
             }
+            .into(),
+        );
+
+        // The "refresh" button is always on
+        buttons.insert(
+            Button::MIXER,
+            cond! {
+            self.pressed_buttons.contains(&Button::MIXER) => PaletteColor::YELLOW,
+            _ => PaletteColor::WHITE }
             .into(),
         );
 

@@ -5,16 +5,6 @@ use reqwest::{self, Url};
 
 use crate::payload::Payload;
 
-/// Information about the current launchpad
-pub struct LaunchPadInfo {
-    /// The model of the launchpad
-    model: String,
-    /// How many buttons it has in the X dimension
-    width: u32,
-    /// How many buttons it has in the Y dimension
-    height: u32,
-}
-
 pub struct Navigator {
     current_url: reqwest::Url,
     current_page: Option<Payload>,
@@ -85,6 +75,11 @@ impl Navigator {
         };
         let old_url = self.do_navigate(next).await?;
         self.history.push(old_url);
+        Ok(())
+    }
+
+    pub async fn refresh(&mut self) -> anyhow::Result<()> {
+        self.do_navigate(self.current_url.clone()).await?;
         Ok(())
     }
 
