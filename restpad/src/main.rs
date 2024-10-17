@@ -8,7 +8,7 @@ use cond::cond;
 use embedded_gfx::{draw_text, text_width};
 use hex_color::HexColor;
 use payload::{Action, ButtonSpec};
-use std::{collections::HashSet, time::Duration};
+use std::{collections::HashSet, pin::Pin, time::Duration};
 
 use any_launchpad::{
     discover, rgb_to_palette, Button, ButtonStyle, Buttons, InputMessage, Launchpad, PaletteColor,
@@ -21,7 +21,7 @@ use navigator::Navigator;
 use preferences::Preferences;
 use tokio::{
     select,
-    time::{interval, Instant, Interval},
+    time::{sleep, Sleep},
 };
 
 static GRID_WIDTH: u32 = 8;
@@ -58,7 +58,8 @@ struct RestPad {
     lp: Box<dyn Launchpad>,
     pressed_buttons: HashSet<Button>,
     counter: i32,
-    timer: Option<Interval>,
+    timer: Option<Pin<Box<Sleep>>>,
+    refresh_timer: Option<Pin<Box<Sleep>>>,
     y_scroll: u32,
 }
 
@@ -72,7 +73,8 @@ impl RestPad {
             lp,
             pressed_buttons: Default::default(),
             counter: 0,
-            timer: Default::default(),
+            timer: None,
+            refresh_timer: None,
             y_scroll: 0,
         })
     }
@@ -107,11 +109,14 @@ impl RestPad {
         loop {
             select! {
                 Some(m) = self.lp.receiver().recv() => {
-                    self.handle_message(m).await?;
+                    print_error(self.handle_message(m).await);
                 }
                 Some(_) = await_optional(&mut self.timer) => {
                     self.counter += 1;
-                    self.update_buttons()?;
+                    print_error(self.update_buttons());
+                }
+                Some(_) = await_optional(&mut self.refresh_timer) => {
+                    print_error(self.refresh_on_timer().await);
                 }
             };
         }
@@ -196,24 +201,42 @@ impl RestPad {
 
     fn on_page_load(&mut self) {
         self.timer = None;
+        self.refresh_timer = None;
 
         // Only start the timer if there are texts to scroll
         if let Some(payload) = self.navigator.current() {
             if !payload.text.is_empty() {
-                self.timer = Some(interval(Duration::from_millis(100)));
+                self.timer = Some(Box::pin(sleep(Duration::from_millis(100))));
+            }
+
+            if let Some(refresh_secs) = payload.refresh_after_secs {
+                self.refresh_timer =
+                    Some(Box::pin(sleep(Duration::from_secs(refresh_secs as u64))));
             }
         }
         self.y_scroll = 0;
     }
 
-    fn update_buttons(&mut self) -> anyhow::Result<()> {
+    async fn refresh_on_timer(&mut self) -> anyhow::Result<()> {
+        let mut buttons = self.calculate_buttons();
+        buttons.insert(Button::MIXER, PaletteColor::YELLOW.into());
+        print_error(self.lp.set_all(buttons));
+
+        self.navigator.refresh().await?;
+        self.on_page_load();
+        self.update_buttons()?;
+
+        Ok(())
+    }
+
+    fn calculate_buttons(&self) -> Buttons {
         let Some(payload) = self.navigator.current() else {
-            return Ok(());
+            return Default::default();
         };
 
-        // UP and DOWN buttons control brightness
         let mut buttons = Buttons::new();
 
+        // UP and DOWN buttons control brightness
         buttons.insert(
             Button::UP,
             cond! {
@@ -353,6 +376,11 @@ impl RestPad {
             let x_shift = -offset;
             draw_text(&mut buttons, &text.text, pos, size, x_shift, color);
         }
+        buttons
+    }
+
+    fn update_buttons(&mut self) -> anyhow::Result<()> {
+        let buttons = self.calculate_buttons();
 
         self.lp.set_all(buttons)?;
         Ok(())
@@ -430,9 +458,12 @@ fn hex_to_rgb(color: HexColor) -> RgbColor {
     }
 }
 
-async fn await_optional(t: &mut Option<tokio::time::Interval>) -> Option<Instant> {
+async fn await_optional(t: &mut Option<Pin<Box<tokio::time::Sleep>>>) -> Option<()> {
     match t.as_mut() {
-        Some(timer) => Some(timer.tick().await),
+        Some(timer) => {
+            timer.await;
+            Some(())
+        }
         None => None,
     }
 }

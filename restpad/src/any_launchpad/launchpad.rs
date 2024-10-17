@@ -48,22 +48,9 @@ pub struct PaletteColor(pub u8);
 impl PaletteColor {
     pub const BLACK: PaletteColor = Self(0);
     pub const DARK_GRAY: PaletteColor = Self(1);
-    pub const LIGHT_GRAY: PaletteColor = Self(2);
     pub const WHITE: PaletteColor = Self(3);
-    pub const LIGHT_RED: PaletteColor = Self(4);
     pub const RED: PaletteColor = Self(5);
-    pub const ORANGE: PaletteColor = Self(9);
     pub const YELLOW: PaletteColor = Self(13);
-    pub const LIME_GREEN: PaletteColor = Self(17);
-    pub const GREEN: PaletteColor = Self(21);
-    pub const SLIGHTLY_LIGHT_GREEN: PaletteColor = Self(29);
-    pub const LIGHT_BLUE: PaletteColor = Self(37);
-    pub const BLUE: PaletteColor = Self(45);
-    pub const PURPLE: PaletteColor = Self(49);
-    pub const MAGENTA: PaletteColor = Self(53);
-    pub const PINK: PaletteColor = Self(57);
-    pub const BROWN: PaletteColor = Self(61);
-    pub const CYAN: PaletteColor = Self(90);
 }
 
 impl From<PaletteColor> for ButtonStyle {

@@ -1,4 +1,3 @@
-use chrono::{DateTime, Local};
 use hex_color::HexColor;
 use serde::{Deserialize, Serialize};
 
@@ -14,10 +13,8 @@ pub struct Payload {
     #[serde(default)]
     pub text: Vec<TextSpec>,
 
-    /// A date time for when the page needs to be automatically refreshed.
-    ///
-    /// The string must be strictly in ISO8601 format, or page loading will fail.
-    pub refresh: Option<DateTime<Local>>,
+    /// The amount of seconds after which the page should automatically refresh
+    pub refresh_after_secs: Option<u32>,
 
     /// For any of the buttons in this page, if no press color is set this color will be used
     pub default_press_color: Option<HexColor>,
